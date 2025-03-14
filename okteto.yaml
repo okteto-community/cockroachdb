@@ -1,0 +1,49 @@
+icon: https://raw.githubusercontent.com/okteto-community/cockroachdb/refs/heads/main/icon.svg
+name: cockroachdb
+build:
+  cockroachdb:
+    context: .
+
+deploy:
+  image: ${OKTETO_BUILD_COCKROACHDB_IMAGE}
+  commands:
+    - name: Create Resources
+      command: |
+        set -e
+        curl -s --create-dirs -o ".postgresql/root.crt" "https://cockroachlabs.cloud/clusters/${COCKROACH_CLUSTERID}/cert"
+        
+
+        username=us_$(tr -dc 'a-z0-9' < /dev/urandom | head -c 10)
+        password=$(tr -dc 'A-Za-z0-9!=*' < /dev/urandom | head -c 10)
+        database=db_$(tr -dc 'a-z0-9' < /dev/urandom | head -c 10)
+
+        cockroach sql --url "postgresql://${COCKROACH_USERNAME}:${COCKROACH_PASSWORD}@${COCKROACH_HOST}:${COCKROACH_PORT}/?sslmode=verify-full" -e "CREATE DATABASE IF NOT EXISTS $database;" --certs-dir=".postgresql"
+        cockroach sql --url "postgresql://${COCKROACH_USERNAME}:${COCKROACH_PASSWORD}@${COCKROACH_HOST}:${COCKROACH_PORT}/?sslmode=verify-full" -e "CREATE USER IF NOT EXISTS $username WITH LOGIN PASSWORD '$password'" --certs-dir=".postgresql"
+        cockroach sql --url "postgresql://${COCKROACH_USERNAME}:${COCKROACH_PASSWORD}@${COCKROACH_HOST}:${COCKROACH_PORT}/?sslmode=verify-full" -e "GRANT ALL ON DATABASE $database to $username" --certs-dir=".postgresql"
+
+        kubectl create secret generic okteto-cockroachdb --from-literal=username=$username --from-literal=password=$password --from-literal=database=$database  --from-literal=host=$COCKROACH_HOST --from-literal=port=$COCKROACH_PORT --dry-run=client -o=yaml  --save-config=true | kubectl apply -f -
+        kubectl create secret generic okteto-cockroachdb-ca --from-file="root.crt=.postgresql/root.crt" --dry-run=client -o=yaml  --save-config=true | kubectl apply -f -
+
+        # make the values available to the following steps and the dashboard
+        echo "OKTETO_EXTERNAL_COCKROACHDB_ENDPOINTS_DB_URL=https://cockroachlabs.cloud/cluster/${COCKROACH_CLUSTERID}/overview" >> "$OKTETO_ENV"
+        
+
+destroy:
+  image: ${OKTETO_BUILD_COCKROACHDB_IMAGE}
+  commands:
+    - name: Destroy Resources
+      command: |
+        set -e
+        curl -s --create-dirs -o ".postgresql/root.crt" "https://cockroachlabs.cloud/clusters/${COCKROACH_CLUSTERID}/cert"
+        database=$(kubectl get secret okteto-cockroachdb -o jsonpath="{.data.database}" | base64 --decode)
+        username=$(kubectl get secret okteto-cockroachdb -o jsonpath="{.data.username}" | base64 --decode)
+
+        cockroach sql --url "postgresql://${COCKROACH_USERNAME}:${COCKROACH_PASSWORD}@${COCKROACH_HOST}:${COCKROACH_PORT}/?sslmode=verify-full" -e "DROP DATABASE IF EXISTS $database CASCADE;" --certs-dir=".postgresql"
+        cockroach sql --url "postgresql://${COCKROACH_USERNAME}:${COCKROACH_PASSWORD}@${COCKROACH_HOST}:${COCKROACH_PORT}/?sslmode=verify-full" -e "DROP USER $username;" --certs-dir=".postgresql"
+
+external:
+  cockroachdb:
+    icon: database
+    notes: cockroach/README.md
+    endpoints:
+      - name: db
