@@ -1,4 +1,4 @@
-icon: https://raw.githubusercontent.com/okteto/icons/refs/heads/main/cockroachdb.svg
+icon: https://raw.githubusercontent.com/okteto-community/cockroachdb/refs/heads/main/icon.svg
 name: cockroachdb
 build:
   cockroachdb:
